@@ -1,0 +1,1223 @@
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+//#include "DataStruct.h"
+// #include "foundation.c"
+// #include "process.c"
+#define RIdERCOAST 300                          //骑手的雇佣成本
+#define PROFIT 10                               //每准时完成一单外卖的盈利
+#define LOSS 50                                 //每超时完成一旦外卖的损失
+#define DISTRIITIME 3                           //订单分配时间上限，超时则视为拒单；
+#define PASTIME 30                              //外卖送达时间上限，超时则罚款；
+#define FORBIDTIME 60                           //派送允许的最大时间，超时则吊销执照
+#define POSX 8                                  //骑手起始横坐标
+#define POSY 9                                  //骑手起始纵坐标
+const int BLOCKLEFT = 0;                        //区域1的左边界
+const int BLOCKRIGHT = 16;                      //区域1的右边界
+const int BLOCKUP = 0;                          //区域2的左边界
+const int BLOCKDOWN = 16;                       //区域2的右边界
+const int dir[9] = {0, 1, 2, 3, 4, 5, 6, 7, 8}; //必经点与骑手的方向关系
+//1为左，2为右，3为上，4为下，5为左上，6为左下，7为右上，8为右下
+const int dic[12][2] = {{-2, 0}, {2, 0}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}, {0, -2}, {0, 2}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}}; //标记骑手的移动方向
+//骑手在状态0下：0为向左，1为向右，2为左上，3为右上，4为左下，5为右下
+//骑手在状态1下：6为向上，7为向下，8为左上，9为右上，10为左下，11为右下
+//// const int dic2[6][2] = {{0, -2}, {0, 2}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+//// 骑手在状态1下：0为向上，1为向下，2为左上，3为右上，4为左下，5为右下
+
+//变量定义可以写在主函数里面
+//int n=0;//订单序号，开始时为0，也为当前接单数
+int ALLORD = 0;   //总结单数
+int TIME = 0;     //记录时间
+int MONEY = 1000; //成本为1000
+int RIDERNUM = 0; //雇佣骑手数量
+int ACHORD = 0;   //订单完成数
+int OVERORD = 0;  //订单超时数
+int RUN = 0;      //判断能否继续经营，破产或吊销执照均不能继续营业；
+int ENDTIME;      //统计最后一个订单的发单时间
+int TOTORD = 0;   //统计样例中订单总数
+int isCreat;
+//全局数据结构定义
+struct ordernode
+{
+    int state; //订单现处于的状态
+    //int block;       //子区域
+    int startime;    //时间
+    int leftime;     //剩余时间
+    int ord_geatDis; //计算餐厅到买家距离
+    int ord_geatDir; //计算餐厅到买家方向
+    int ordPos_X;    //餐馆横坐标
+    int ordPos_Y;    //餐馆纵坐标
+    int gestPos_X;   //买家横坐标
+    int gestPos_Y;   //买家纵坐标
+    int keyPosX;     //关键点横坐标
+    int keyPosY;     //关键点纵坐标
+    struct ordernode *next;
+}; //创建一个关于餐馆订单的链表
+typedef struct ordernode orderNode;
+typedef orderNode *orderList;
+
+struct ridernode
+{
+    int no;    //标记骑手序号
+    int state; //标记骑手状态
+    //int block;      //标记骑手所属区域
+    int ridPosCurX; //骑手横坐标
+    //int ridPosNextX;   //骑手下一步横坐标的移动方向
+    int ridPosCurY; //骑手纵坐标
+    //int ridPosNextY;   //骑手下一步纵坐标的移动方向
+    int curDir;        //当前骑手前往的方向
+    int curDis;        //当前骑手距离关键点的距离
+    int numOrd;        //骑手携带的订单数量
+    orderList HeadOrd; //标记骑手订单链表的首地址
+    orderNode *next;   //与相应的订单相对应，与订单链表连系起来
+    //struct rider *next2;
+}; //创建一个骑手状态的结构体数组；
+typedef struct ridernode riderNode;
+riderNode rider[300];
+
+struct mapnode
+{
+    int x;
+    int y;
+    int flag;
+};
+typedef struct mapnode mapNode;
+mapNode mapn[20][20];
+mapNode node[100];
+
+riderNode addOrd(riderNode rider, orderList curOrd, orderList tempOrd); //将订单添加到骑手的订单队列中
+
+int Manhattan(int ordx, int ordy, int gestx, int gesty); //计算距离
+
+int Direction(int ordx, int ordy, int riderx, int ridery); //判断必经点与骑手的方向关系
+
+int sameDir(int curDir, int keyDir); //判断两个方向是否相同
+
+riderNode upDateRider(riderNode rider); //更新骑手数据
+
+riderNode upDateOrd(riderNode rider); //更新订单数据
+
+void emergentSend(orderList HeadOrd, orderList emergentOrd, orderList tempOrd); //紧急情况进行派送
+
+void hireRider(); //把雇佣的骑手加进空闲骑手结构体数组里
+
+orderList input(); //输入样例
+
+orderList CreatOrdList(orderList headPtr1); //创建待处理订单的链表
+
+//void divide(orderList HeadOrd); //将地图分区域
+
+void send(orderList HeadOrd); //将订单派送给骑手
+
+int plan(riderNode rider); //规划骑手路径
+
+void Broke();
+
+void FindKeyNode(int keyX, int keyY, orderList HeadOrd);
+
+orderList OrdSort(orderList HeadOrd); //对骑手的订单链表按优先级进行排序
+
+int Dir_Path(int keyDir, int keyPosX, int keyPosY, int keyNextPosX, int keyNextPosY, riderNode rider); //根据方向规划下一步方向; //根据方向规划下一步方向
+
+int isArrive(int ordx, int ordy, int riderx, int ridery); //判断是否到达关键点
+
+mapNode BFS(riderNode rider); //对骑手位置三个位置范围内进行广搜，寻找关键点
+
+mapNode search(int posx, int posy, int num2, int curPosX, int curPosY, int dir, int dis, int no); //对当前扫描点进行检查
+
+int reason(int posCurx, int posCury, int posNextx, int posNexty); //计算更改路径是否合理
+
+riderNode execute(int path, riderNode rider); //执行已规划路径
+
+//void judge(); //统计每一时间单元内的订单派送数及超时数，计算是否破产，或受益金额
+
+void output(); //输出结果
+
+void warning(); //超过预警值另分配
+
+void Finish(riderNode rider, int state); //结束已完成的订单
+
+void output(); //输出
+
+int main()
+{
+    setlocale(LC_ALL, ""); //修改程序语言环境以适应中文
+    orderList HeadOrd1 = NULL;
+    orderNode *CurOrd1 = NULL;
+    orderList HeadOrd2 = NULL;
+    HeadOrd1 = (orderNode *)malloc(sizeof(orderNode));
+    HeadOrd2 = (orderNode *)malloc(sizeof(orderNode));
+    HeadOrd1 = input();
+    HeadOrd2->next = NULL;
+    CurOrd1 = HeadOrd1->next;
+    // hireRider();
+    for (TIME = 1; RUN == 0 && TIME <= ENDTIME && ACHORD < TOTORD; TIME++)
+    {
+        while (MONEY >= 350)
+        {
+            if (RIDERNUM <= 300)
+                hireRider(); //rider range from 1;
+        }
+        HeadOrd2->next = CreatOrdList(HeadOrd1);
+        if (HeadOrd2->next != NULL)
+        {
+            send(HeadOrd2);
+        }
+        for (int i = 1; i <= RIDERNUM; i++)
+        {
+            int path = -1;
+            if (rider[i].numOrd != 0)
+            {
+                path = plan(rider[i]);
+            }
+            rider[i] = execute(path, rider[i]);
+        }
+        output();
+    }
+    return 0;
+}
+
+orderList input()
+{
+    orderNode *headPtr = NULL;
+    headPtr = (orderNode *)malloc(sizeof(orderNode));
+    orderNode *lastPtr = NULL, *currentPtr = NULL;
+    lastPtr = headPtr;
+    int a, b, c, d, e, f;
+    FILE *fp = fopen("C:\\VScode\\STRUCTURE\\project\\data.txt", "r");
+    if (fp == NULL)
+        printf("error open!\n");
+    else
+    {
+        while (fscanf(fp, "%d %d %d %d %d %d", &a, &b, &c, &d, &e, &f) != EOF)
+        {
+            currentPtr = (orderNode *)malloc(sizeof(orderNode));
+            //currentPtr->n = a;
+            currentPtr->startime = b;
+            currentPtr->ordPos_X = c;
+            currentPtr->ordPos_Y = d;
+            currentPtr->gestPos_X = e;
+            currentPtr->gestPos_Y = f;
+            currentPtr->next = NULL;
+            // currentPtr->keyPosX = currentPtr->ordPos_X;
+            // currentPtr->keyPosY = currentPtr->ordPos_Y;
+            // currentPtr->state
+            lastPtr->next = currentPtr;
+            lastPtr = currentPtr;
+            ENDTIME = currentPtr->startime + FORBIDTIME; //规则允许的最大时间
+            TOTORD++;
+        }
+    }
+    lastPtr->next = NULL;
+    fclose(fp);
+    return headPtr;
+}
+
+orderList CreatOrdList(orderList headPtr1) //该链表与定单链表交换节点
+{
+    orderNode *curOrd1 = headPtr1->next;
+    orderNode *tempOrd = headPtr1;
+    orderNode *headPtr2;
+    headPtr2 = (orderNode *)malloc(sizeof(orderNode));
+    headPtr2 = NULL;
+    orderNode *curOrd2 = headPtr2;
+    int flag = 0;
+    isCreat = 0;
+    while (flag == 0 && curOrd1)
+    {
+        flag = 1;
+        if (curOrd1->startime == TIME)
+        {
+            tempOrd->next = curOrd1->next;
+            //curOrd2->next = curOrd1;
+            if (headPtr2 == NULL)
+            {
+                headPtr2 = curOrd1;
+            }
+            else
+            {
+                curOrd2 = headPtr2;
+                while (curOrd2->next)
+                {
+                    curOrd2 = curOrd2->next;
+                }
+                curOrd2->next = curOrd1;
+            }
+            curOrd1->next = NULL;
+            curOrd2 = curOrd1;
+            curOrd1 = tempOrd->next;
+            flag = 0;
+            isCreat = 1;
+        }
+    }
+    if (isCreat == 1)
+        return headPtr2;
+    else
+    {
+        return NULL;
+    }
+}
+
+void send(orderList HeadOrd) //将订单派送给骑手
+{
+    orderNode *curOrd = NULL;
+    orderNode *tempOrd = HeadOrd;
+    curOrd = HeadOrd->next;
+    while (curOrd)
+    {
+        int ismate = 0;                                    //判断是否可以匹配派送
+        int minOrd = 100;                                  //寻找最少订单数的骑手
+        int minRider;                                      //记录该骑手的号码
+        for (int i = 1; i <= RIDERNUM && ismate == 0; i++) //遍历骑手
+        {
+            ismate = 0;
+            int ordx = curOrd->ordPos_X;
+            int ordy = curOrd->ordPos_Y;
+            int riderx = rider[i].ridPosCurX;
+            int ridery = rider[i].ridPosCurY;
+            int curDir = Direction(ordx, ordy, riderx, ridery);
+            //int dis = Manhattan(ordx, ordy, riderx, ridery);
+            if (rider[i].numOrd == 0)
+            {
+                rider[i] = addOrd(rider[i], curOrd, tempOrd);
+                ismate = 1;
+            }
+            if (ismate != 1) //当订单代分配时间达到上界
+            {
+                //if (rider[i].block == curOrd->block)
+                {
+                    if (minOrd > rider[i].numOrd)
+                    {
+                        minOrd = rider[i].numOrd;
+                        minRider = i;
+                    }
+                }
+            }
+            if (curDir == rider[i].curDir && ismate != 1 && rider[i].numOrd <= 5) //如果顺路
+            {
+                rider[i] = addOrd(rider[i], curOrd, tempOrd);
+                ismate = 1;
+            }
+        }
+        if (ismate != 1)
+        {
+            rider[minRider] = addOrd(rider[minRider], curOrd, tempOrd);
+            ismate = 1;
+        }
+        curOrd = tempOrd->next;
+        tempOrd = tempOrd->next;
+    }
+}
+
+riderNode execute(int path, riderNode rider) //执行已规划路径
+{
+    orderNode *curOrd = rider.HeadOrd->next;
+    orderNode *tempOrd = rider.HeadOrd;
+    if (path != -1) //path=-1骑手处于待命状态
+    {
+        rider.ridPosCurX += dic[path][0];
+        rider.ridPosCurY += dic[path][1];
+        while (curOrd && RUN == 0)
+        {
+            if (TIME - curOrd->startime >= FORBIDTIME) //实时进行破产分析
+            {
+                Broke();
+                RUN = 2;
+            }
+            if (isArrive(curOrd->keyPosX, curOrd->keyPosY, rider.ridPosCurX, rider.ridPosCurY) == 1)
+            {
+                mapn[curOrd->keyPosX][curOrd->keyPosY].flag = 0;
+                if (curOrd->state == 1)
+                {
+                    curOrd->state = 2;
+                    curOrd->keyPosX = curOrd->gestPos_X;
+                    curOrd->keyPosY = curOrd->gestPos_Y;
+                    //curOrd->leftime = PASTIME-(TIME-curOrd->startime);
+                    mapn[curOrd->keyPosX][curOrd->keyPosY].flag = rider.no;
+                    curOrd = curOrd->next;
+                }
+                else if (curOrd->state == 2) //已完成订单
+                {
+                    rider.numOrd--;
+                    ACHORD++;
+                    if (TIME - curOrd->startime <= 30)
+                    {
+                        MONEY += PROFIT;
+                    }
+                    else if ((TIME - curOrd->startime) <= FORBIDTIME && (TIME - curOrd->startime >= PASTIME))
+                    {
+                        MONEY -= LOSS;
+                        OVERORD++;
+                        if (MONEY < 0)
+                        {
+                            RUN = 1;
+                            Broke();
+                        }
+                    }
+                    orderNode *FreeOrd = NULL;
+                    tempOrd->next = curOrd->next;
+                    FreeOrd = curOrd;
+                    curOrd = curOrd->next;
+                    free(FreeOrd);
+                    rider = upDateRider(rider); //每次操作完成对骑手数据进行更新
+                }
+            }
+            else
+            {
+                curOrd = curOrd->next;
+                tempOrd = tempOrd->next;
+            }
+        }
+    }
+    return rider;
+}
+
+void Broke()
+{
+    if (RUN == 1)
+    {
+        printf("因为资金小于0，破产。\n");
+    }
+    else
+    {
+
+        printf("因为订单派送超时，吊销营业执照。\n");
+    }
+
+    printf("接单数：%d\n完成数：%d\n超时数：%d\n", ALLORD, ACHORD, OVERORD);
+    for (int i = 1; i <= RIDERNUM; i++)
+    {
+        printf("骑手%d的位置：  %d  %d\n", rider[i].no, rider[i].ridPosCurX, rider[i].ridPosCurY);
+    }
+}
+
+int isArrive(int ordx, int ordy, int riderx, int ridery) //判断是否到达关键点//未完成！！！
+{
+    int flag = 0;
+    if (ordx == riderx && abs(ordy - ridery) == 1)
+    {
+        flag = 1;
+    }
+    else if (ordy == ridery && abs(ordx - riderx) == 1)
+    {
+        flag = 1;
+    }
+    return flag;
+}
+
+int plan(riderNode rider) //规划骑手路径
+{
+    int path;
+    mapNode keyNode; //获得BFS后求得的关键点坐标
+    int curDir;
+    int keyNode_x;
+    int keyNode_y;
+    int keyNextPosX;
+    int keyNextPosY;
+    //orderList HeadOrd;
+    //orderList curOrd = NULL;
+    rider = upDateRider(rider); //在优化路径前对原始订单链表更新数据
+    curDir = rider.curDir;
+    //curOrd = HeadOrd->next;
+    // keyNode = BFS(rider);
+    // if (keyNode.flag == 1) //已找到关键点
+    // {
+    //     FindKeyNode(keyNode.x, keyNode.y, rider.HeadOrd);
+    //     if (isArrive(keyNode.x, keyNode.y, rider.ridPosCurX, rider.ridPosCurY) == 1)
+    //     {
+    //         int state = 2;
+    //         Finish(rider, state);
+    //         keyNode.flag = 0;
+    //     }
+    // }
+    // if (keyNode.flag == 1)
+    // {
+    //     curDir = Direction(keyNode.x, keyNode.y, rider.ridPosCurX, rider.ridPosCurY);
+    //     // int curDis = Manhattan(keyNode.x, keyNode.y, rider[i].ridPosCurX, rider[i].ridPosCurY);
+    //     keyNextPosX = rider.HeadOrd->next->keyPosX; //首订单的坐标地址
+    //     keyNextPosY = rider.HeadOrd->next->keyPosY;
+    //     path = Dir_Path(curDir, keyNode.x, keyNode.y, keyNextPosX, keyNextPosY, rider);
+    //     //upDateRider(rider[i]); //对优化订单链表更新数据
+    // }
+    // else if (keyNode.flag == 0) //按原始路径派送//先实现最原始程序
+    {
+        curDir = rider.curDir;
+        keyNode_x = rider.HeadOrd->next->keyPosX;
+        keyNode_y = rider.HeadOrd->next->keyPosY;
+        if (rider.HeadOrd->next->state == 1)
+        {
+            keyNextPosX = rider.HeadOrd->next->gestPos_X;
+            keyNextPosY = rider.HeadOrd->next->gestPos_Y;
+        }
+        else if (rider.HeadOrd->next->state == 2 && rider.HeadOrd->next->next != NULL)
+        {
+            keyNextPosX = rider.HeadOrd->next->next->ordPos_X;
+            keyNextPosY = rider.HeadOrd->next->next->ordPos_Y;
+        }
+        else if (rider.HeadOrd->next->next == NULL) //如果只有一组订单，让骑手返回起始位置
+        {
+            keyNextPosX = POSX;
+            keyNextPosY = POSY;
+        }
+        path = Dir_Path(curDir, keyNode_x, keyNode_y, keyNextPosX, keyNextPosY, rider);
+    }
+    return path;
+}
+
+mapNode BFS(riderNode rider) ///*对骑手位置三个位置范围内进行广搜，寻找关键点*///有问题此处的curPosx与curPosy为骑手位置，不能用isArrive判断
+{
+    mapNode keyNode;
+    keyNode.flag = 0;
+    int no = rider.no;
+    int state = rider.state;
+    int ismate = 0;
+    int posx = rider.ridPosCurX;
+    int posy = rider.ridPosCurY;
+    //int block = rider.block;
+    int dir = rider.curDir;
+    int dis = rider.curDis;
+    int num1 = 1, num2 = 1;
+    node[num1].x = posx;
+    node[num1].y = posy;
+    while (num1 <= num2 && num2 <= 16 && ismate == 0) //版本1.0只对两步内的区域进行搜索
+    {
+        for (int k = 0; k < 6 && ismate == 0; k++)
+        {
+            int path = 6 * state + k;
+            int curPosX = node[num1].x + dic[path][0]; //state的转换！
+            int curPosY = node[num1].y + dic[path][1];
+            int curDir = Direction(curPosX, curPosY, posx, posy);
+            if (sameDir(dir, curDir) == 1 && curPosX != rider.HeadOrd->next->keyPosX && curPosY != rider.HeadOrd->next->keyPosX) //所找关键点不能为订单链表的首订单
+            {
+                num2++;
+                keyNode = search(curPosX, curPosY, num2, posx, posy, dir, dis, no);
+                ismate = keyNode.flag;
+                // if (ismate == 1)
+                // {
+                //     int curDis = Manhattan(posx, posy, curPosX, curPosY);
+                //     if (curDis > dis)
+                //     {
+                //         ismate = 0;
+                //         keyNode.flag = 0;
+                //     }
+                // }
+            }
+        }
+        num1++;
+    }
+    return keyNode; //flag为0则未找到关键点
+}
+
+mapNode search(int posx, int posy, int num2, int curPosX, int curPosY, int dir, int dis, int no) //对当前扫描点进行检查
+{
+    mapNode keyNode;
+    node[num2].x = posx;
+    node[num2].y = posy;
+    if (mapn[posx][posy].flag == no) //要及时归0
+    {
+        int curDir = Direction(posx, posy, curPosX, curPosY);
+        int curDis = Manhattan(posx, posy, curPosX, curPosY);
+        if (sameDir(curDir, dir) == 1 && curDis <= 5 && curDis <= dis)
+        {
+            keyNode.x = posx;
+            keyNode.y = posy;
+            keyNode.flag = 1;
+        }
+        else
+        {
+            keyNode.flag = 0;
+        }
+    }
+    else
+    {
+        keyNode.flag = 0;
+    }
+    return keyNode;
+}
+
+int Dir_Path(int keyDir, int keyPosX, int keyPosY, int keyNextPosX, int keyNextPosY, riderNode rider) //根据方向规划下一步方向//最核心函数
+{
+    int path;
+    int state = rider.state;
+    int riderX = rider.ridPosCurX;
+    int riderY = rider.ridPosCurY;
+    //int curDir = rider.curDir;
+    int DisX = keyPosX - riderX;
+    int DisY = keyPosY - riderY;
+    int dir = Direction(keyNextPosX, keyNextPosY, keyPosX, keyPosY);
+    if (state == 0) //水平道路
+    {
+        switch (keyDir)
+        {
+        case (3):                    //3为上
+            if (riderX == BLOCKLEFT) //当在左边界只能右上
+            {
+                path = 3;
+            }
+            else if (riderX == BLOCKRIGHT) //当在右边界只能左上
+            {
+                path = 2;
+            }
+            else
+            {
+                if (dir == 1 || dir == 5 || dir == 6)
+                {
+                    path = 2; //左上
+                }
+                else if (dir == 2 || dir == 7 || dir == 8)
+                {
+                    path = 3; //右上
+                }
+                else
+                {
+                    path = 2; //左上
+                }
+            }
+            break;
+        case (4):                    //4为下
+            if (riderX == BLOCKLEFT) //当在左边界只能右下
+            {
+                path = 5;
+            }
+            else if (riderX == BLOCKRIGHT) //当在右边界只能左下
+            {
+                path = 4;
+            }
+            else
+            {
+                if (dir == 1 || dir == 5 || dir == 6)
+                {
+                    path = 4; //左下
+                }
+                else if (dir == 2 || dir == 7 || dir == 8)
+                {
+                    path = 5; //右下
+                }
+                else
+                {
+                    path = 4; //左下
+                }
+            }
+            break;
+        case (5): //5为左上
+            if (DisX == -2)
+            {
+                if (DisY == -1)
+                    if (dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 2; //左上
+                    }
+                    else //if (dir == 1 || dir == 2 || dir == 6 || dir == 4 || dir == 8)
+                    {
+                        path = 0; //左
+                    }
+                else
+                {
+                    path = 2; //左上
+                }
+            }
+            else if (DisX < -2)
+            {
+                path = 0; //左
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (6): //6为左下
+            if (DisX == -2)
+            {
+                if (DisY == 1)
+                {
+                    if (dir == 1 || dir == 2 || dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 0; //左
+                    }
+                    else //if ( dir == 6 || dir == 4 || dir == 8)
+                    {
+                        path = 4; //左下
+                    }
+                }
+                else
+                {
+                    path = 4; //左下
+                }
+            }
+            else if (DisX < -2)
+            {
+                path = 0; //左
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (7): //7为右上
+            if (DisX == 2)
+            {
+                if (DisY == -1)
+                {
+                    if (dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 3; //右上
+                    }
+                    else
+                    {
+                        path = 1; //右
+                    }
+                }
+                else
+                {
+                    path = 3; //右上
+                }
+            }
+            else if (DisX > 2)
+            {
+                path = 1; //右
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (8): //8为右下
+            if (DisX == 2)
+            {
+                if (DisY == 1)
+                {
+                    if (dir == 1 || dir == 2 || dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 1; //右
+                    }
+                    else
+                    {
+                        path = 5; //右下
+                    }
+                }
+                else
+                {
+                    path = 5; //右下
+                }
+            }
+            else if (DisX > 2)
+            {
+                path = 1; //右
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    else if (state == 1) //竖直道路
+    {
+        switch (keyDir)
+        {
+        case (1):                  //1为左
+            if (riderY == BLOCKUP) //当在上边界只能左下
+            {
+                path = 4;
+            }
+            else if (riderY == BLOCKDOWN) //当在下边界只能左上
+            {
+                path = 2;
+            }
+            else
+            {
+                if (dir == 5 || dir == 3 || dir == 7)
+                {
+                    path = 2; //左上
+                }
+                else
+                {
+                    path = 4; //左下
+                }
+            }
+            break;
+        case (2):                  //2为右
+            if (riderY == BLOCKUP) //当在上边界只能右下
+            {
+                path = 5;
+            }
+            else if (riderY == BLOCKDOWN) //当在下边界只能右上
+            {
+                path = 3;
+            }
+            else
+            {
+                if (dir == 5 || dir == 3 || dir == 7)
+                {
+                    path = 3; //右上
+                }
+                else
+                {
+                    path = 5; //右下
+                }
+            }
+            break;
+        case (5): //5为左上
+            if (DisY == -2)
+            {
+                if (DisX == -1)
+                {
+                    if (dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 0; //上
+                    }
+                    else
+                    {
+                        path = 2; //左上
+                    }
+                }
+                else
+                {
+                    path = 2; //左上
+                }
+            }
+            else if (DisY < -2)
+            {
+                path = 0; //上
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (6): //6为左下
+            if (DisY == 2)
+            {
+                if (DisX == -1)
+                {
+                    if (dir == 6 || dir == 4 || dir == 8)
+                    {
+                        path = 1; //下
+                    }
+                    else
+                    {
+                        path = 4; //左下
+                    }
+                }
+                else
+                {
+                    path = 4; //左下
+                }
+            }
+            else if (DisY > 2)
+            {
+                path = 1; //下
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (7): //7为右上
+            if (DisY == -2)
+            {
+
+                if (DisX == 1)
+                {
+                    if (dir == 5 || dir == 3 || dir == 7)
+                    {
+                        path = 0; //上
+                    }
+                    else
+                    {
+                        path = 3; //右上
+                    }
+                }
+                else
+                {
+                    path = 3; //右上
+                }
+            }
+            else if (DisY < -2)
+            {
+                path = 0; //上
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        case (8): //8为右下
+            if (DisY == 2)
+            {
+                if (DisX == 1)
+                {
+                    if (dir == 6 || dir == 4 || dir == 8)
+                    {
+                        path = 1; //下
+                    }
+                    else
+                    {
+                        path = 5; //右下
+                    }
+                }
+                else
+                {
+                    path = 5; //右下
+                }
+            }
+            else if (DisY > 2)
+            {
+                path = 1; //右下
+            }
+            else
+            {
+                printf(" POSITION EORROR!\n");
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    path += 6 * state;
+    return path;
+}
+
+void FindKeyNode(int keyX, int keyY, orderList HeadOrd)
+{
+    orderNode *curOrd = HeadOrd->next;
+    orderNode *FirstOrd = curOrd;
+    orderNode *tempOrd = HeadOrd;
+    while (curOrd)
+    {
+        if (curOrd->keyPosX == keyX && curOrd->keyPosY == keyY)
+        {
+            tempOrd->next = curOrd->next;
+            curOrd->next = FirstOrd->next;
+            FirstOrd->next = curOrd;
+        }
+        curOrd = curOrd->next;
+        tempOrd = tempOrd->next;
+    }
+}
+
+void Finish(riderNode rider, int state) //结束已完成的订单
+{
+    orderNode *curOrd = rider.HeadOrd->next;
+    orderNode *tempOrd = rider.HeadOrd;
+    if (state == 2)
+    {
+        curOrd = curOrd->next;
+        if (curOrd->state == 1)
+        {
+            curOrd->state = 2;
+            curOrd->keyPosX = curOrd->gestPos_X;
+            curOrd->keyPosY = curOrd->gestPos_Y;
+            //curOrd->leftime = PASTIME-(TIME-curOrd->startime);
+        }
+        else if (curOrd->state == 2) //已完成订单
+        {
+            rider.HeadOrd->next->next = curOrd->next;
+            tempOrd = curOrd;
+            curOrd = curOrd->next;
+            free(tempOrd);
+        }
+    }
+    else if (state == 1)
+    {
+        if (curOrd->state == 1)
+        {
+            curOrd->state = 2;
+            curOrd->keyPosX = curOrd->gestPos_X;
+            curOrd->keyPosY = curOrd->gestPos_Y;
+            //curOrd->leftime = PASTIME-(TIME-curOrd->startime);
+        }
+        else if (curOrd->state == 2) //已完成订单
+        {
+            orderNode *tempOrd = NULL;
+            rider.HeadOrd->next = curOrd->next;
+            tempOrd = curOrd;
+            curOrd = curOrd->next;
+            free(tempOrd);
+        }
+    }
+}
+
+void output() //输出
+{
+    wprintf(L"时间:   %d\n", TIME);
+    wprintf(L"钱：    %d\n", MONEY);
+    wprintf(L"接单数：    %d\n", ALLORD);
+    wprintf(L"完成数：    %d\n", ACHORD);
+    wprintf(L"超时数：    %d\n", OVERORD);
+    for (int i = 1; i <= RIDERNUM; i++)
+    {
+        wprintf(L"骑手%d位置：%d   %d\n", i, rider[i].ridPosCurX, rider[i].ridPosCurY);
+        wprintf(L"骑手%d所带订单数：    %d\n", i, rider[i].numOrd);
+    }
+    printf("\n\n");
+}
+
+riderNode addOrd(riderNode Rider, orderList curOrd, orderList tempOrd) //将订单添加到骑手的订单队列中
+{
+    ALLORD++;
+    Rider.numOrd++;
+    curOrd->state = 1;
+    curOrd->keyPosX = curOrd->ordPos_X;
+    curOrd->keyPosY = curOrd->ordPos_Y;
+    curOrd->ord_geatDir = Direction(curOrd->gestPos_X, curOrd->gestPos_Y, curOrd->ordPos_X, curOrd->ordPos_Y);
+    curOrd->ord_geatDis = Manhattan(curOrd->gestPos_X, curOrd->gestPos_Y, curOrd->ordPos_X, curOrd->ordPos_Y);
+    mapn[curOrd->ordPos_X][curOrd->ordPos_Y].flag = Rider.no;
+    Rider.next->next = (orderNode *)malloc(sizeof(orderNode));
+    Rider.next->next = curOrd; //先将新加入订单插入队尾
+    tempOrd->next = curOrd->next;
+    curOrd->next = NULL;
+    curOrd = tempOrd->next;
+    Rider.next = Rider.next->next;
+    Rider = upDateRider(Rider); //如果添加新订单对该骑手数据进行更新
+    return Rider;
+    // if (rider.numOrd != 0) //订单排序后期优化再处理
+    // {
+    //     rider.HeadOrd->next = OrdSort(rider.HeadOrd->next); //版本1以上再对订单链表进行排序(按剩余时间)
+    // }
+    // else if (rider.numOrd == 0)
+    // {
+    //     rider.HeadOrd = OrdSort(rider.HeadOrd);
+    // }
+}
+
+int Manhattan(int ordx, int ordy, int riderx, int ridery) //计算距离
+{
+    return abs(ordx - riderx) + abs(ordy - ridery);
+}
+
+int Direction(int ordx, int ordy, int riderx, int ridery) //判断必经点与骑手的方向关系//以后一组为基准点
+{
+    if (ordx - riderx > 0) //右方向
+    {
+        if (ordy - ridery > 0) //右下方向
+            return 8;
+        else if (ordy - ridery == 0) //右方向
+            return 2;
+        else //右上方向
+        {
+            return 7;
+        }
+    }
+    else if (ordx - riderx < 0) //左方向
+    {
+        if (ordy - ridery > 0) //左下方向
+            return 6;
+        else if (ordy - ridery == 0) //左方向
+            return 2;
+        else //左上方向
+        {
+            return 5;
+        }
+    }
+    else if (ordx - riderx == 0) //在同一竖直道路上
+    {
+        if (ordy - ridery > 0) //下方向
+            return 4;
+        else if (ordy - ridery < 0) //上方向
+        {
+            return 3;
+        }
+        else //两点位置相同
+        {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void hireRider() //把雇佣的骑手加进空闲骑手结构体数组里
+{
+    orderList HeadOrd = NULL;
+    HeadOrd = (orderNode *)malloc(sizeof(orderNode));
+    RIDERNUM++;
+    MONEY -= 300;
+    rider[RIDERNUM].no = RIDERNUM;
+    rider[RIDERNUM].state = 0; //初始骑手在水平道路上
+    //rider[RIDERNUM].block = block;
+    rider[RIDERNUM].ridPosCurX = POSX;
+    rider[RIDERNUM].ridPosCurY = POSY;
+    rider[RIDERNUM].numOrd = 0;
+    rider[RIDERNUM].HeadOrd = HeadOrd;
+    rider[RIDERNUM].next = rider[RIDERNUM].HeadOrd;
+    rider[RIDERNUM].HeadOrd->next = NULL;
+}
+
+void emergentSend(orderList HeadOrd, orderList emergentOrd, orderList tempOrd) //紧急情况进行派送
+{
+    orderNode *curOrd = NULL;
+    curOrd = HeadOrd->next;
+    HeadOrd->next = emergentOrd;
+    tempOrd->next = emergentOrd->next;
+    emergentOrd->next = curOrd;
+} //HeadOrd为需要紧急派送骑手的订单链表的头指针，emergentOrd为需要紧急派送的订单，tempOrd为emergentOrd的上一个订单
+
+void DelectChainList(orderList headPtr) //删除已处理链表//临时写的
+{
+    orderNode *current = headPtr->next;
+    orderNode *p = NULL;
+    while (current)
+    {
+        p = current->next;
+        free(current);
+        current = p;
+    }
+}
+
+riderNode upDateRider(riderNode rider) //更新骑手数据
+{
+    int riderx = rider.ridPosCurX;
+    int ridery = rider.ridPosCurY;
+    if (rider.numOrd != 0)
+    {
+        rider = upDateOrd(rider);
+        orderList HeadOrd = rider.HeadOrd;
+        orderNode *curOrd = HeadOrd->next;
+        int ordx = curOrd->keyPosX;
+        int ordy = curOrd->keyPosY;
+        rider.curDir = Direction(ordx, ordy, riderx, ridery);
+        rider.curDis = Manhattan(ordx, ordy, riderx, ridery);
+    }
+    if (riderx % 2 == 1 && ridery % 2 == 0) //处于竖直道路
+    {
+        rider.state = 1;
+    }
+    else if (ridery % 2 == 1 && riderx % 2 == 0) //处于水平道路
+    {
+        rider.state = 0;
+    }
+    else
+    {
+        printf("EORROR! WRONG POSITION!\n");
+    } //更新骑手位置状态
+    if (rider.numOrd == 0)
+    {
+        rider.next = rider.HeadOrd;
+        rider.curDir = 0;
+        rider.curDis = 0;
+    }
+    return rider;
+}
+
+riderNode upDateOrd(riderNode rider) //更新订单数据
+{
+    int NeedTime;
+    orderList HeadOrd = rider.HeadOrd;
+    orderNode *curOrd = HeadOrd->next;
+    orderNode *tempOrd = HeadOrd;
+    while (curOrd)
+    {
+        if (curOrd->state == 1)
+        {
+            curOrd->keyPosX = curOrd->ordPos_X;
+            curOrd->keyPosY = curOrd->ordPos_Y;
+        }
+        else if (curOrd->state == 2)
+        {
+            curOrd->keyPosX = curOrd->gestPos_X;
+            curOrd->keyPosY = curOrd->gestPos_Y;
+        }
+        NeedTime = Manhattan(rider.ridPosCurX, rider.ridPosCurY, curOrd->keyPosX, curOrd->keyPosY) / 2;
+        if (curOrd->state == 1)
+        {
+            curOrd->leftime += (curOrd->ord_geatDis / 2);
+        }
+        curOrd->leftime = PASTIME - NeedTime; //计算可支配时间
+        if (curOrd->leftime <= 2)             //后期根据经验修改！！
+        {
+            emergentSend(HeadOrd, curOrd, tempOrd);
+        }
+        tempOrd = curOrd->next;
+        curOrd = curOrd->next;
+    }
+    return rider;
+}
+
+int sameDir(int curDir, int keyDir) //判断两个方向是否相同
+{
+    int flag = 0;
+    if (curDir == 5 && (keyDir == 1 || keyDir == 3 || keyDir == 5))
+    {
+        flag = 1;
+    }
+    else if (curDir == 6 && (keyDir == 1 || keyDir == 4 || keyDir == 6))
+    {
+        flag = 1;
+    }
+    else if (curDir == 7 && (keyDir == 2 || keyDir == 3 || keyDir == 7))
+    {
+        flag = 1;
+    }
+    else if (curDir == 8 && (keyDir == 2 || keyDir == 4 || keyDir == 8))
+    {
+        flag = 1;
+    }
+    else if (curDir == 1 && keyDir == 1)
+    {
+        flag = 1;
+    }
+    else if (curDir == 2 && keyDir == 2)
+    {
+        flag = 1;
+    }
+    else if (curDir == 3 && keyDir == 3)
+    {
+        flag = 1;
+    }
+    else if (curDir == 4 && keyDir == 4)
+    {
+        flag = 1;
+    }
+    return flag;
+}
+
+orderList OrdSort(orderList HeadOrd) //对骑手的订单链表按优先级进行排序
+{
+    orderNode *first, *a, *b, *c;
+    first = HeadOrd->next;
+    HeadOrd->next = NULL;
+    while (first != NULL)
+    {
+        for (a = first, b = HeadOrd; ((b != NULL) && a->leftime > b->leftime /*排序条件*/); c = b, b = b->next)
+            ;
+        first = first->next;
+        if (b == HeadOrd)
+            HeadOrd = a;
+        else
+            c->next = a;
+        a->next = b;
+    }
+    return HeadOrd;
+}
+
+// void divide(orderList HeadOrd) //block标记为1为在区域1订单，标记为2在区域2订单，标记为3则为跨区域订单
+// {
+//     orderNode *curOrd = NULL;
+//     curOrd = HeadOrd->next;
+//     while (curOrd)
+//     {
+//         if (curOrd->ordPos_X <= BLOCK1RIGHT && curOrd->ordPos_X >= BLOCK1LEFT && curOrd->gestPos_X <= BLOCK1RIGHT && curOrd->gestPos_X >= BLOCK1LEFT)
+//         {
+//             curOrd->block = 1;
+//         }
+//         else if (curOrd->ordPos_X <= BLOCK2RIGHT && curOrd->ordPos_X >= BLOCK2LEFT && curOrd->gestPos_X <= BLOCK2RIGHT && curOrd->gestPos_X >= BLOCK2LEFT)
+//         {
+//             curOrd->block = 2;
+//         }
+//         else if (curOrd->ordPos_X == BLOCK3 && curOrd->gestPos_X <= BLOCK1RIGHT && curOrd->gestPos_X >= BLOCK1LEFT)
+//         {
+//             curOrd->block = 1;
+//         }
+//         else if (curOrd->ordPos_X == BLOCK3 && curOrd->gestPos_X <= BLOCK2RIGHT && curOrd->gestPos_X >= BLOCK2LEFT)
+//         {
+//             curOrd->block = 2;
+//         }
+//         else
+//         {
+//             curOrd->block = 3;
+//         }
+//     }
+// }
